@@ -1,0 +1,15 @@
+.tools/
+.research/
+.private/
+build/
+artifacts/
+__pycache__/
+*.pyc
+.env
+.env.*
+*.keystore
+*.jks
+*.key
+*.pem
+*.sqlite
+*.sqlite-*

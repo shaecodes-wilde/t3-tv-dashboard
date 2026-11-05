@@ -87,6 +87,14 @@ public class ComposeActivity extends Activity {
             f.edit.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int n){}public void onTextChanged(CharSequence s,int st,int before,int count){if(s.length()>0)for(CheckBox box:f.options)box.setChecked(false);save(f);}public void afterTextChanged(Editable e){}});
             LinearLayout buttons=TvUi.row(this);buttons.setPadding(0,TvUi.dp(this,8),0,0);
             Button speak=TvUi.button(this,"Speak",()->speak(index));speak.setTag("speak-"+index);controls.add(speak);TvUi.addButton(buttons,speak,110);
+            // Without the keyboard, vertical D-pad keys navigate controls instead of the text caret.
+            f.edit.setOnKeyListener((v,code,event)->{
+                if(event.getAction()!=KeyEvent.ACTION_DOWN||(code!=KeyEvent.KEYCODE_DPAD_DOWN&&code!=KeyEvent.KEYCODE_DPAD_UP))return false;
+                WindowInsets insets=v.getRootWindowInsets();
+                if(Build.VERSION.SDK_INT>=30&&insets!=null&&insets.isVisible(WindowInsets.Type.ime()))return false;
+                View next=code==KeyEvent.KEYCODE_DPAD_DOWN?speak:v.focusSearch(View.FOCUS_UP);
+                return next!=null&&next.requestFocus();
+            });
             Button keyboard=TvUi.button(this,"Type / edit",()->keyboard(f));controls.add(keyboard);TvUi.addButton(buttons,keyboard,150);
             Button clear=TvUi.button(this,"Clear text",()->f.edit.setText(""));controls.add(clear);TvUi.addButton(buttons,clear,120);form.addView(buttons);
         }

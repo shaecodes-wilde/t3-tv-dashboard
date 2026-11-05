@@ -17,10 +17,10 @@ import java.util.*;
 
 // Installed only as a separate instrumentation APK. No fixture API is added to the app.
 public class QaInstrumentation extends Instrumentation {
-    String profile,head; int checks, failures; Activity active;
+    String profile,head,invocation; int checks, failures; Activity active;
     ArrayList<String> log=new ArrayList<>();
     interface Work { void run() throws Exception; }
-    public void onCreate(Bundle args){super.onCreate(args);profile=args.getString("profile","tv");head=args.getString("head","unrecorded");start();}
+    public void onCreate(Bundle args){super.onCreate(args);profile=args.getString("profile","tv");head=args.getString("head","unrecorded");invocation=args.getString("invocation","unrecorded");start();}
     @Override public void callActivityOnCreate(Activity activity,Bundle saved){
         if(profile.equals("720p")){
             Resources r=activity.getResources();Configuration c=new Configuration(r.getConfiguration());
@@ -30,6 +30,7 @@ public class QaInstrumentation extends Instrumentation {
             r.updateConfiguration(c,m);
         }
         super.callActivityOnCreate(activity,saved);
+        if(profile.equals("720p"))activity.getWindow().setLayout(1280,720);
     }
     void ui(Work w){final RuntimeException[] error={null};runOnMainSync(()->{try{w.run();}catch(Exception e){error[0]=new RuntimeException(e);}});if(error[0]!=null)throw error[0];waitForIdleSync();}
     void check(String name,boolean ok){checks++;if(!ok)failures++;log.add((ok?"PASS ":"FAIL ")+name);}
@@ -42,19 +43,19 @@ public class QaInstrumentation extends Instrumentation {
     boolean visible(View view){Rect r=new Rect();return view!=null&&view.getGlobalVisibleRect(r)&&r.width()>=view.getWidth()-2&&r.height()>=view.getHeight()-2&&view.getWidth()>0&&view.getHeight()>0;}
     boolean dialogContains(String text){long until=SystemClock.uptimeMillis()+1500;do{AccessibilityNodeInfo root=getUiAutomation().getRootInActiveWindow();if(root!=null&&!root.findAccessibilityNodeInfosByText(text).isEmpty())return true;SystemClock.sleep(20);}while(SystemClock.uptimeMillis()<until);return false;}
     View byText(View v,String label){if(v instanceof TextView&&((TextView)v).getText().toString().equals(label))return v;if(v instanceof ViewGroup)for(int i=0;i<((ViewGroup)v).getChildCount();i++){View found=byText(((ViewGroup)v).getChildAt(i),label);if(found!=null)return found;}return null;}
+    void geometry(){
+        View root=active.getWindow().getDecorView();
+        int width=profile.equals("720p")?1280:1920,height=profile.equals("720p")?720:1080;
+        check("assertion/capture window is "+width+"x"+height+" (actual "+root.getWidth()+"x"+root.getHeight()+")",root.getWidth()==width&&root.getHeight()==height);
+    }
     void shot(String name)throws Exception{
         waitForIdleSync();SystemClock.sleep(250);final Bitmap[] image={null};
-        if(profile.equals("720p"))ui(()->{
-            ViewGroup content=active.findViewById(android.R.id.content);View root=content.getChildAt(0);
-            int w=root.getWidth(),h=root.getHeight();
-            root.measure(View.MeasureSpec.makeMeasureSpec(1280,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(720,View.MeasureSpec.EXACTLY));root.layout(0,0,1280,720);
-            image[0]=Bitmap.createBitmap(1280,720,Bitmap.Config.ARGB_8888);root.draw(new android.graphics.Canvas(image[0]));
-            if(active instanceof MainActivity&&name.equals("02-dashboard")){
-                MainActivity a=(MainActivity)active;
-                check("720p native render shows every task filter",visible(a.findTag(root,"tab-attention"))&&visible(a.findTag(root,"tab-working"))&&visible(a.findTag(root,"tab-all")));
-            }
-            root.measure(View.MeasureSpec.makeMeasureSpec(w,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(h,View.MeasureSpec.EXACTLY));root.layout(0,0,w,h);
-        });else image[0]=getUiAutomation().takeScreenshot();
+        ui(this::geometry);
+        image[0]=getUiAutomation().takeScreenshot();
+        if(profile.equals("720p")&&image[0]!=null){
+            final Rect frame=new Rect();ui(()->{View decor=active.getWindow().getDecorView();int[] xy=new int[2];decor.getLocationOnScreen(xy);frame.set(xy[0],xy[1],xy[0]+decor.getWidth(),xy[1]+decor.getHeight());});
+            Bitmap full=image[0];image[0]=Bitmap.createBitmap(full,frame.left,frame.top,frame.width(),frame.height());if(image[0]!=full)full.recycle();
+        }
         Bitmap b=image[0];if(b==null)throw new IOException("Native screenshot unavailable");File dir=new File(getTargetContext().getFilesDir(),"qa-"+profile);dir.mkdirs();try(OutputStream out=new FileOutputStream(new File(dir,name+".png"))){b.compress(Bitmap.CompressFormat.PNG,100,out);}b.recycle();
     }
     JSONObject feed(boolean longText)throws Exception{
@@ -108,7 +109,7 @@ public class QaInstrumentation extends Instrumentation {
         render(a,feed(true),DashboardState.LIVE);shot("05-long-titles-environments");
         check("focused task stays visible after title heights change",visible(a.getCurrentFocus()));
         ui(()->a.findTag(a.getWindow().getDecorView(),"env-e7").requestFocus());render(a,MonitorService.snapshot,DashboardState.LIVE);
-        check("far environment chip stays focusable",String.valueOf(a.getCurrentFocus().getTag()).equals("env-e7"));shot("06-environment-overflow");
+        check("far environment chip stays fully visible",String.valueOf(a.getCurrentFocus().getTag()).equals("env-e7")&&visible(a.getCurrentFocus()));shot("06-environment-overflow");
         render(a,new JSONObject().put("environments",new JSONArray()),DashboardState.LIVE);check("no-environment state is explicit",screen().contains("No environments configured."));shot("07-no-environments");
         JSONObject empty=feed(false);for(int i=0;i<2;i++)empty.getJSONArray("environments").getJSONObject(i).put("threads",new JSONArray());render(a,empty,DashboardState.LIVE);
         check("empty attention names the filter",screen().contains("No tasks need attention."));shot("08-empty-attention");
@@ -236,6 +237,6 @@ public class QaInstrumentation extends Instrumentation {
             SharedPreferences prefs=getTargetContext().getSharedPreferences("drafts",0);SharedPreferences.Editor edit=prefs.edit();for(String key:prefs.getAll().keySet())if(key.startsWith("e0|qa-"))edit.remove(key);edit.commit();
             dashboard();conversation();composer();storageFailure();parserFailures();
         }catch(Throwable e){failures++;log.add("ERROR "+e);for(StackTraceElement s:e.getStackTrace())log.add(s.toString());}
-        finally{try{close();File dir=new File(getTargetContext().getFilesDir(),"qa-"+profile);dir.mkdirs();try(PrintWriter out=new PrintWriter(new File(dir,"results.txt"))){out.println("Candidate: "+head);out.println("Native Android TV fixture QA: "+profile);for(String line:log)out.println(line);out.println("Checks: "+checks+", failures/errors: "+failures);out.println("Synthetic preview fixtures only. Malformed connection file removed; no Send/Confirm or speech recording.");}}catch(Exception e){failures++;}Bundle result=new Bundle();result.putString("stream",checks+" checks; "+failures+" failures/errors");finish(failures==0?Activity.RESULT_OK:Activity.RESULT_CANCELED,result);}
+        finally{try{close();File dir=new File(getTargetContext().getFilesDir(),"qa-"+profile);dir.mkdirs();try(PrintWriter out=new PrintWriter(new File(dir,"results.txt"))){out.println("Candidate: "+head);out.println("Invocation: "+invocation);out.println("Native Android TV fixture QA: "+profile);for(String line:log)out.println(line);out.println("Checks: "+checks+", failures/errors: "+failures);out.println("Synthetic preview fixtures only. Malformed connection file removed; no Send/Confirm or speech recording.");}}catch(Exception e){failures++;}Bundle result=new Bundle();result.putString("stream",checks+" checks; "+failures+" failures/errors");finish(failures==0?Activity.RESULT_OK:Activity.RESULT_CANCELED,result);}
     }
 }

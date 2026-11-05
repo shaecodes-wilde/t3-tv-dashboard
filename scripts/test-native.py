@@ -41,8 +41,8 @@ size = command('device-size', adb + ['shell', 'wm', 'size'])
 density = command('device-density', adb + ['shell', 'wm', 'density'])
 if re.findall(r'size:\s*(\d+x\d+)', size)[-1] != '1920x1080' or re.findall(r'density:\s*(\d+)', density)[-1] != '320':
     raise SystemExit('Native fixture profiles require a 1920x1080 / 320dpi TV; global display settings are never changed.')
-package = command('device-package', adb + ['shell', 'pm', 'path', 'com.wilde.t3tv.preview'])
-if package.strip():
+packages = command('device-package', adb + ['shell', 'pm', 'list', 'packages', 'com.wilde.t3tv.preview'])
+if 'package:com.wilde.t3tv.preview' in packages.splitlines():
     command('preview-access', adb + ['shell', 'run-as', 'com.wilde.t3tv.preview', 'pwd'])
     result = subprocess.run(adb + ['shell', 'run-as', 'com.wilde.t3tv.preview', 'test', '-f', 'files/connection.json'], capture_output=True)
     (output / 'preview-isolation.log').write_bytes(result.stdout + result.stderr + ('\nEXIT: ' + str(result.returncode) + ' (1 means absent)\n').encode())

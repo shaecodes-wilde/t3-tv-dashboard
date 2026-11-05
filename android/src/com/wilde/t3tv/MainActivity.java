@@ -5,6 +5,7 @@ import android.app.*;
 import android.content.*;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
@@ -83,14 +84,8 @@ public class MainActivity extends Activity {
         clock.setText(new SimpleDateFormat("EEE  h:mm a",Locale.getDefault()).format(new Date()));
         int feed=MonitorService.feedState;
         JSONObject data=MonitorService.snapshot;
-        if (data==null) {
-            connection.setText(feed==DashboardState.STALE?"● Showing cached data":"○ Connecting to your environments…");
-            connection.setTextColor(feed==DashboardState.STALE?AMBER:MUTED);
-            availability.setText("");banner.setVisibility(View.GONE);
-            return;
-        }
         try {
-            JSONArray envsJson=data.getJSONArray("environments");
+            JSONArray envsJson=data==null?new JSONArray():data.getJSONArray("environments");
             ArrayList<DashboardState.Env> envs=new ArrayList<>();
             for(int i=0;i<envsJson.length();i++) {
                 JSONObject e=envsJson.getJSONObject(i);DashboardState.Env env=new DashboardState.Env();
@@ -108,20 +103,21 @@ public class MainActivity extends Activity {
             DashboardState.View view=DashboardState.summarize(feed,MonitorService.lastSuccess,System.currentTimeMillis(),envs,selectedEnvironment,filter,getSharedPreferences("dashboard",0).getBoolean("alerts",true));
             if(view.banner!=null) {
                 banner.setVisibility(View.VISIBLE);bannerText.setText(view.banner);bannerAge.setText(view.bannerAge==null?"":view.bannerAge);
-                String detail=view.bannerDetail!=null?view.bannerDetail:feed==DashboardState.STALE?MonitorService.feedDetail:null;
+                String detail=view.bannerDetail!=null?view.bannerDetail:MonitorService.feedDetail;
                 if(detail!=null){bannerDetail.setText(detail);bannerDetail.setVisibility(View.VISIBLE);}else bannerDetail.setVisibility(View.GONE);
             } else banner.setVisibility(View.GONE);
-            availability.setText(view.availability);availability.setTextColor(feed==DashboardState.STALE?AMBER:MUTED);
-            connection.setText(view.footer);connection.setTextColor(feed==DashboardState.LIVE?GREEN:feed==DashboardState.STALE?AMBER:MUTED);
-            String signature=envsJson.toString()+"|"+feed+"|"+MonitorService.lastSuccess+"|"+selectedEnvironment+"|"+filter;
+            boolean unavailable=feed==DashboardState.STALE||feed==DashboardState.UNAVAILABLE;
+            availability.setText(view.availability);availability.setTextColor(unavailable?AMBER:MUTED);
+            connection.setText(view.footer);connection.setTextColor(feed==DashboardState.LIVE?GREEN:unavailable?AMBER:MUTED);
+            String signature=envsJson.toString()+"|"+feed+"|"+(data!=null)+"|"+selectedEnvironment+"|"+filter;
             if(signature.equals(lastSignature))return;
             lastSignature=signature;
             String focused=getCurrentFocus()!=null?String.valueOf(getCurrentFocus().getTag()):"";
             int oldScroll=scroll.getScrollY();
             environmentRow.removeAllViews();
-            addEnvironment("all","All environments",true,selectedEnvironment.equals("all"),view.cached);
+            if(data!=null)addEnvironment("all","All environments",true,selectedEnvironment.equals("all"),view.cached);
             for(DashboardState.Env env:envs)addEnvironment(env.id,env.label,env.online,selectedEnvironment.equals(env.id),view.cached);
-            buildTabs(view);
+            if(data!=null)buildTabs(view);else tabs.removeAllViews();
             taskList.removeAllViews();
             for(DashboardState.Task task:view.tasks) {
                 LinearLayout card=taskCard(task,view.cached);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.bottomMargin=dp(10);taskList.addView(card,lp);
@@ -131,7 +127,12 @@ public class MainActivity extends Activity {
             if(restore!=null)restore.requestFocus();
             else if(focused.startsWith("task-")) {View tab=findTag(tabs,"tab-"+filter);if(tab!=null)tab.requestFocus();}
             else if(focused.startsWith("env-")) {View env=findTag(environmentRow,"env-"+selectedEnvironment);if(env!=null)env.requestFocus();}
-            scroll.post(()->scroll.scrollTo(0,oldScroll));
+            scroll.post(()->{
+                scroll.scrollTo(0,oldScroll);
+                View target=getCurrentFocus();
+                if(target!=null&&String.valueOf(target.getTag()).startsWith("task-"))
+                    target.requestRectangleOnScreen(new Rect(0,0,target.getWidth(),target.getHeight()),true);
+            });
         } catch(JSONException e) {connection.setText("Unexpected bridge data · check the bridge version");connection.setTextColor(AMBER);}
     }
 
@@ -142,10 +143,13 @@ public class MainActivity extends Activity {
             String name=(key.equals("attention")?"Needs attention":key.equals("working")?"Working":"All tasks")+"  "+count;
             LinearLayout tab=new LinearLayout(this);tab.setOrientation(LinearLayout.VERTICAL);tab.setPadding(dp(2),dp(2),dp(2),dp(2));
             boolean selected=key.equals(filter);
-            tab.addView(text(name,15,selected?GREEN:MUTED));
+            TextView label=text(name,15,selected?GREEN:MUTED);label.setSingleLine(true);
+            tab.addView(label,new LinearLayout.LayoutParams(-2,-2));
             View underline=new View(this);underline.setBackgroundColor(selected?GREEN:Color.TRANSPARENT);
             LinearLayout.LayoutParams up=new LinearLayout.LayoutParams(-1,dp(3));up.topMargin=dp(6);tab.addView(underline,up);
             focusable(tab,"tab-"+key,()->{filter=key;lastSignature="";render();View focus=findTag(tabs,"tab-"+key);if(focus!=null)focus.requestFocus();},false);
+            tab.setBackground(null);
+            tab.setOnFocusChangeListener((w,f)->w.setBackground(f?background(true,false):null));
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-2,-2);lp.rightMargin=dp(28);tabs.addView(tab,lp);
         }
     }

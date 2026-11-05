@@ -69,12 +69,16 @@ public class MonitorService extends Service {
             feedState = DashboardState.LIVE;
             feedDetail = null;
         } catch (Exception e) {
-            android.util.Log.w("T3Dashboard", "Feed refresh failed: " + e.getClass().getSimpleName() + ": " + e.getMessage());
-            feedState = lastSuccess == 0 ? DashboardState.CONNECTING : DashboardState.STALE;
-            String message = e.getMessage();
-            feedDetail = message != null && !message.isEmpty() ? message : e.getClass().getSimpleName();
+            feedFailed(e);
         }
         sendBroadcast(new Intent(UPDATED).setPackage(getPackageName()));
+    }
+
+    static void feedFailed(Exception e) {
+        // Parser messages can include private connection JSON or response bodies.
+        android.util.Log.w("T3Dashboard", "Feed refresh failed: " + e.getClass().getSimpleName());
+        feedDetail = "Check the bridge connection file and bridge log.";
+        feedState = lastSuccess == 0 ? DashboardState.UNAVAILABLE : DashboardState.STALE;
     }
 
     void alert(String title, String body) {

@@ -48,7 +48,8 @@ public class ComposeActivity extends Activity {
         LinearLayout footer=TvUi.row(this);footer.setPadding(0,TvUi.dp(this,10),0,0);
         draftState=TvUi.text(this,"",12,TvUi.MUTED);footer.addView(draftState,new LinearLayout.LayoutParams(0,-2,1));
         footer.addView(TvUi.text(this,"D-pad Move focus     OK Select     Back keep draft",11,TvUi.MUTED));root.addView(footer);
-        initializing=false;setFrozen();updateDraftState();updateReady();
+        // A failed commit can leave newer values in memory; confirm them on disk before claiming a save.
+        initializing=false;setFrozen();noteSaved(drafts.edit().commit());updateReady();
         if(!fields.isEmpty()){View focus=form.findViewWithTag("speak-0");if(focus!=null)focus.requestFocus();}
     }
 
@@ -92,9 +93,11 @@ public class ComposeActivity extends Activity {
     }
     void keyboard(Field f){if(f.edit==null)return;f.edit.requestFocus();f.edit.setSelection(f.edit.length());getSystemService(InputMethodManager.class).showSoftInput(f.edit,InputMethodManager.SHOW_FORCED);}
     void save(Field f){if(initializing||retired)return;try{JSONArray values=new JSONArray();for(int i=0;i<f.options.size();i++)if(f.options.get(i).isChecked())values.put(f.values.get(i));JSONObject value=new JSONObject().put("selected",values).put("text",f.edit==null?"":f.edit.getText().toString());noteSaved(drafts.edit().putString(key+"|field|"+f.id,value.toString()).commit());}catch(JSONException ignored){}updateReady();}
-    boolean hasPersistedDraft(){for(String k:drafts.getAll().keySet())if(k.startsWith(key+"|")&&!k.equals(key+"|voiceIndex"))return true;return false;}
-    void updateDraftState(){boolean saved=hasPersistedDraft();draftState.setText(saved?"● Draft saved on this TV":"No saved draft yet");draftState.setTextColor(saved?TvUi.GREEN:TvUi.MUTED);}
-    void noteSaved(boolean committed){if(committed)updateDraftState();else{draftState.setText("Draft could not be saved on this TV.");draftState.setTextColor(TvUi.AMBER);}}
+    boolean hasDraft(){for(String k:drafts.getAll().keySet())if(k.startsWith(key+"|")&&!k.equals(key+"|voiceIndex"))return true;return false;}
+    void noteSaved(boolean committed){
+        if(committed){boolean saved=hasDraft();draftState.setText(saved?"● Draft saved on this TV":"No saved draft yet");draftState.setTextColor(saved?TvUi.GREEN:TvUi.MUTED);}
+        else{draftState.setText("Draft could not be saved on this TV.");draftState.setTextColor(TvUi.AMBER);}
+    }
     boolean readyToSend(){
         if(sending||frozen!=null||retired)return false;
         if(request==null)return fields.get(0).edit!=null&&!fields.get(0).edit.getText().toString().trim().isEmpty();
@@ -160,9 +163,14 @@ public class ComposeActivity extends Activity {
         final JSONObject body=frozen;
         worker.execute(()->{
             try{JSONObject result=FeedClient.request(this,"/v1/action",body);if(!result.optBoolean("accepted"))throw new Exception("Delivery not confirmed. Retry to check safely.");clearDraft();
-                handler.post(()->{sending=false;if(isDestroyed())return;String delivery=result.optString("delivery");String message=delivery.equals("queued")?"Follow-up queued after the current task.":delivery.equals("steered")?"Update sent to the active task.":delivery.equals("started")?"T3 has started the next turn for your reply.":request==null?"Your reply is saved in the conversation. Return to see the current task status.":"Your answer was accepted. Return to the conversation for the next update.";new AlertDialog.Builder(this).setTitle("Accepted by T3").setMessage(message).setPositiveButton("View conversation",(d,w)->finish()).setOnCancelListener(d->finish()).show();});
+                handler.post(()->showAccepted(result.optString("delivery")));
             }catch(Exception e){handler.post(()->{sending=false;if(isDestroyed())return;setFrozen();status.setText(e.getMessage()+"\nDraft saved. Retry delivery uses the same request ID.");status.setTextColor(TvUi.AMBER);});}
         });
+    }
+    void showAccepted(String delivery){
+        sending=false;if(isDestroyed())return;
+        String message=delivery.equals("queued")?"Follow-up queued after the current task.":delivery.equals("steered")?"Update sent to the active task.":delivery.equals("started")?"T3 has started the next turn for your reply.":request==null?"Your reply is saved in the conversation. Return to see the current task status.":"Your answer was accepted. Return to the conversation for the next update.";
+        new AlertDialog.Builder(this).setTitle("Accepted by T3").setMessage(message).setPositiveButton("View conversation",(d,w)->finish()).setOnCancelListener(d->finish()).show();
     }
     void clearDraft(){retired=true;SharedPreferences.Editor edit=drafts.edit();for(String k:drafts.getAll().keySet())if(k.startsWith(key+"|"))edit.remove(k);edit.commit();}
     void discard(){if(sending)return;new AlertDialog.Builder(this).setTitle("Discard this draft?").setMessage(frozen==null?"The saved text will be removed.":"Delivery may already have succeeded. Check the conversation before sending a new reply. Discarding does not cancel a message T3 accepted.").setNegativeButton("Keep",null).setPositiveButton("Discard",(d,w)->{clearDraft();finish();}).show();}

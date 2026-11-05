@@ -1,0 +1,5 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.wilde.t3tv.qa">
+  <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="34" />
+  <application android:label="T3 isolated UI fixture QA" android:debuggable="true" />
+  <instrumentation android:name="com.wilde.t3tv.QaInstrumentation" android:targetPackage="com.wilde.t3tv.preview" android:label="Native fixture QA" />
+</manifest>

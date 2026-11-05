@@ -45,6 +45,14 @@ node --test --test-concurrency=2 tests/test_t3_api.mjs
 
 `test-state.sh` compiles `DashboardState.java` and `tests/com/wilde/t3tv/DashboardStateTest.java` on a plain JDK and runs checks for status labels, filter counts, environment selection, and the stale/recovery connection states.
 
+Native UI fixtures can run on an explicitly selected Android TV device:
+
+```bash
+python3 scripts/test-native.py DEVICE_SERIAL --output .research/native-qa
+```
+
+This installs a separate **T3 Dashboard UI preview** and instrumentation package. It preserves the installed dashboard and its data, refuses a configured preview, uses synthetic tasks, and never sends a reply or permission decision. It tests visible filters, remote focus/scroll, conversation routing, voice fallback/transcript review without recording, delivery confirmation UI, parser-error privacy, and failed draft saves/reopening. The preview must use the same development signing key on repeat installs; the script does not uninstall an incompatible package. It captures the device's 1080p display and renders 720p fixtures offscreen on Android without changing global TV display settings. Physical microphone and viewing-distance validation remain separate.
+
 ## Configure and install
 
 From the repository root, replace `YOUR_LAN_IP` with the bridge computer's LAN IP:
@@ -130,7 +138,7 @@ Uninstall **T3 Dashboard** on the TV, or use `adb uninstall com.wilde.t3tv`. Sto
 
 **Send and continue** lets T3 start or update the task according to its current state. **Queue follow-up** runs after the active turn. **Update current task** sends an in-flight instruction and is offered when the task is active. Structured questions appear under **Requests** and are answered against their specific request IDs. Permission requests require an explicit decision and confirmation; session-wide and permanent grants stay in the desktop T3 client.
 
-Drafts are stored privately on the TV per environment, thread, and request; the composer's *Draft saved on this TV* line appears only after a write has committed. Before sending, the exact payload and a stable request ID are saved. After a timeout, **Retry delivery** uses that same ID. The bridge persists prepared commands and receipts in `.private/actions.sqlite`; T3’s command IDs prevent duplicate execution if the connection drops after acceptance. A submitted draft is locked until delivery is confirmed or explicitly discarded. Discarding never cancels a message already accepted by T3.
+Drafts are stored privately on the TV per environment, thread, and request; the composer confirms a successful preferences commit before showing *Draft saved on this TV*, including after reopening. Failed saves show a warning until persistence succeeds. Before sending, the exact payload and a stable request ID are saved. After a timeout, **Retry delivery** uses that same ID. The bridge persists prepared commands and receipts in `.private/actions.sqlite`; T3’s command IDs prevent duplicate execution if the connection drops after acceptance. A submitted draft is locked until delivery is confirmed or explicitly discarded. Discarding never cancels a message already accepted by T3.
 
 The scoped T3 credentials expire after 90 days. Renew them without printing tokens:
 

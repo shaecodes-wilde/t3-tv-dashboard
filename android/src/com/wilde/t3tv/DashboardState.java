@@ -9,9 +9,10 @@ import java.util.List;
  * so tests/com/wilde/t3tv/DashboardStateTest.java can run it on a plain JDK.
  */
 final class DashboardState {
-    static final int CONNECTING = 0; // No successful bridge response yet.
+    static final int CONNECTING = 0; // First request is still pending.
     static final int LIVE = 1;
     static final int STALE = 2;      // Bridge unreachable or feed expired; shown data is cached.
+    static final int UNAVAILABLE = 3; // A request failed before any successful update.
 
     static final class Task {
         String id, environmentId, environment, title, project, model, status, updatedAt;
@@ -93,6 +94,11 @@ final class DashboardState {
             v.banner = "Bridge offline. Reconnecting…";
             v.bannerAge = "Last update " + age(lastSuccess, now);
             v.footer = "● Showing cached data";
+        } else if (feed == UNAVAILABLE) {
+            v.availability = "Connection unavailable";
+            v.banner = "Bridge unavailable. Reconnecting…";
+            v.bannerAge = "No update received";
+            v.footer = "○ No update received";
         } else if (feed == CONNECTING) {
             v.availability = "";
             v.footer = "○ Connecting…";
@@ -108,7 +114,9 @@ final class DashboardState {
         }
 
         if (v.shown == 0) {
-            if (v.environments == 0) v.empty = "No environments configured.";
+            if (feed == CONNECTING) v.empty = "Connecting to your environments…";
+            else if (feed == UNAVAILABLE) v.empty = "No update received. Reconnecting…";
+            else if (v.environments == 0) v.empty = "No environments configured.";
             else if (v.online == 0 && feed == LIVE) v.empty = "No environments online. Reconnecting…";
             else v.empty = filter.equals("attention") ? "No tasks need attention." : filter.equals("working") ? "No working tasks." : "No tasks.";
         }

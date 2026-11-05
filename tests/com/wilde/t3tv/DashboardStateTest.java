@@ -93,6 +93,14 @@ public final class DashboardStateTest {
         DashboardState.View connecting = DashboardState.summarize(DashboardState.CONNECTING, 0, 1000, two, "all", "all", true);
         check("connecting footer is not live", connecting.footer.contains("Connecting") && !connecting.footer.contains("Live") && !connecting.cached);
 
+        DashboardState.View firstFailure = DashboardState.summarize(DashboardState.UNAVAILABLE, 0, 1000, new ArrayList<>(), "all", "attention", true);
+        check("first failure warns instead of indefinite loading", firstFailure.banner != null && firstFailure.banner.contains("unavailable"));
+        check("first failure does not claim cached or live data", !firstFailure.cached && !firstFailure.footer.contains("Live") && !firstFailure.footer.contains("cached"));
+        check("first failure has no online claim", !firstFailure.availability.contains("online"));
+        check("first failure explains missing update", firstFailure.bannerAge.equals("No update received") && firstFailure.empty.contains("No update received"));
+        DashboardState.View firstRecovery = DashboardState.summarize(DashboardState.LIVE, 2000, 2000, two, "all", "attention", true);
+        check("first successful response clears failure presentation", firstRecovery.banner == null && firstRecovery.footer.contains("Live") && firstRecovery.shown == 3);
+
         DashboardState.View none = DashboardState.summarize(DashboardState.LIVE, 1000, 2000, new ArrayList<>(), "all", "all", true);
         check("no environments labelled", none.empty != null && none.empty.contains("No environments"));
 

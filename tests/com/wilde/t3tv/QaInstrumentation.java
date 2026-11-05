@@ -36,6 +36,7 @@ public class QaInstrumentation extends Instrumentation {
     void close(){if(active!=null){Activity a=active;ui(a::finish);active=null;}}
     <T extends Activity>T open(Class<T> type, Intent intent){close();intent.setClass(getTargetContext(),type).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);active=startActivitySync(intent);waitForIdleSync();return type.cast(active);}
     void key(int code){sendKeyDownUpSync(code);waitForIdleSync();}
+    String focused(){View v=active.getCurrentFocus();return v==null?"none":v.getClass().getSimpleName()+" tag="+v.getTag()+" text="+(v instanceof TextView?((TextView)v).getText():"")+" touch="+v.isInTouchMode();}
     String text(View v){String s=v instanceof TextView?((TextView)v).getText().toString():"";if(v instanceof ViewGroup)for(int i=0;i<((ViewGroup)v).getChildCount();i++){View c=((ViewGroup)v).getChildAt(i);if(c.getVisibility()==View.VISIBLE)s+="\n"+text(c);}return s;}
     String screen(){final String[] s={""};ui(()->s[0]=text(active.getWindow().getDecorView()));return s[0];}
     boolean visible(View view){Rect r=new Rect();return view!=null&&view.getGlobalVisibleRect(r)&&r.width()>=view.getWidth()-2&&r.height()>=view.getHeight()-2&&view.getWidth()>0&&view.getHeight()>0;}
@@ -81,11 +82,13 @@ public class QaInstrumentation extends Instrumentation {
             check("filter row stays compact (height "+((View)tab.getParent()).getHeight()+"px)",((View)tab.getParent()).getHeight()<a.dp(65));
             View task=a.findTag(a.getWindow().getDecorView(),"task-e0-t0");
             check("task viewport retains at least 250dp",((View)task.getParent().getParent()).getHeight()>=a.dp(250));
-            tab.requestFocus();
         });
+        key(KeyEvent.KEYCODE_DPAD_LEFT);
+        ui(()->a.findTag(a.getWindow().getDecorView(),"tab-attention").requestFocus());
+        check("filter navigation starts in remote mode: "+focused(),String.valueOf(a.getCurrentFocus().getTag()).equals("tab-attention"));
         for(String tab:new String[]{"working","all"}){
             key(KeyEvent.KEYCODE_DPAD_RIGHT);
-            check("D-pad reaches visible "+tab+" filter",String.valueOf(a.getCurrentFocus().getTag()).equals("tab-"+tab)&&visible(a.getCurrentFocus()));
+            check("D-pad reaches visible "+tab+" filter: "+focused(),String.valueOf(a.getCurrentFocus().getTag()).equals("tab-"+tab)&&visible(a.getCurrentFocus()));
             key(KeyEvent.KEYCODE_DPAD_CENTER);
             check("OK selects visible "+tab+" filter",String.valueOf(a.getCurrentFocus().getTag()).equals("tab-"+tab)&&visible(a.getCurrentFocus()));
         }
@@ -150,8 +153,9 @@ public class QaInstrumentation extends Instrumentation {
         check("required questions block readiness until answered",!q.readyToSend());
         ui(()->{q.fields.get(0).options.get(0).performClick();q.fields.get(1).edit.setText("Keep the green outline.");});
         check("both required answers permit readiness",q.readyToSend());check("answers remain request-specific",q.payload(null).getString("requestId").equals("q1"));shot("13-questions-top");
-        ui(()->q.form.findViewWithTag("speak-0").requestFocus());
-        for(int i=0;i<12&&!String.valueOf(q.getCurrentFocus().getTag()).equals("speak-1");i++)key(KeyEvent.KEYCODE_DPAD_DOWN);
+        key(KeyEvent.KEYCODE_DPAD_LEFT);ui(()->q.form.findViewWithTag("speak-0").requestFocus());
+        check("question navigation starts on its first Speak control: "+focused(),String.valueOf(q.getCurrentFocus().getTag()).equals("speak-0"));
+        for(int i=0;i<12&&!String.valueOf(q.getCurrentFocus().getTag()).equals("speak-1");i++){key(KeyEvent.KEYCODE_DPAD_DOWN);log.add("FOCUS question step "+i+": "+focused());}
         check("D-pad reveals the second question controls",String.valueOf(q.getCurrentFocus().getTag()).equals("speak-1")&&visible(q.getCurrentFocus()));shot("13-questions");close();
         JSONObject permission=new JSONObject("{\"id\":\"p1\",\"kind\":\"command\",\"prompt\":\"Allow the agent to run the fixture test command?\"}");
         ComposeActivity p=open(ComposeActivity.class,composeIntent("qa-permission",true).putExtra("request",permission.toString()));

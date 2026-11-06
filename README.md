@@ -2,8 +2,8 @@
 
 A native, remote-controlled dashboard and voice-reply client for T3 Code environments. Built for the Bell FibeTV box (Android 14) and its directional remote.
 
-- Environment cards for multiple local or SSH-connected T3 environments.
-- Needs attention, Working, and All tasks views; OK opens the conversation and latest response.
+- Compact environment filters for multiple local or SSH-connected T3 environments, with the online count beside them.
+- Needs attention, Working, and All tasks views with their task counts; OK opens the conversation and latest response.
 - Voice or keyboard replies with editable drafts, explicit Send, and queued or in-flight delivery.
 - Structured question answers and explicit one-time permission decisions.
 - Live completion, pending-question/approval, and failure alerts.
@@ -25,7 +25,7 @@ The bridge host must remain awake and connected. Reserve its LAN address to keep
 
 ## Use with the Fibe remote
 
-Open **T3 Dashboard** from the TV's apps. Use the arrow keys and OK to select an environment, filter, or task. Inside a task, choose **Reply / Speak**. Choose **Speak**, say your message into the remote, review or edit the transcript, then select **Send**. **Keyboard / edit** also supports the TV keyboard’s dictation. The physical remote mic button normally belongs to Google Assistant; use the on-screen Speak button if it opens Assistant. Back preserves an unsent draft. Back from the dashboard returns to TV while monitoring continues.
+Open **T3 Dashboard** from the TV's apps. Use the arrow keys and OK to select an environment, filter, or task. Inside a task, choose **Reply**. Choose **Speak**, say your message into the remote, review or edit the transcript, then select **Send**. **Type / edit** also supports the TV keyboard’s dictation. The physical remote mic button normally belongs to Google Assistant; use the on-screen Speak button if it opens Assistant. Back preserves an unsent draft. Back from the dashboard returns to TV while monitoring continues.
 
 For visible alerts over other apps, choose **Settings → Enable pop-ups over TV** and allow **Display over other apps** for T3 Dashboard. Use **Send a test alert** to check it. Some apps can suppress overlays; normal Android notifications are also posted, though TV launchers may not display them like phones do.
 
@@ -38,9 +38,20 @@ No Gradle or third-party Android dependencies are needed. The bridge’s T3 API 
 ```bash
 bash scripts/bootstrap-tools.sh
 bash scripts/build.sh
+bash scripts/test-state.sh
 python3 -m unittest discover -s tests -v
 node --test --test-concurrency=2 tests/test_t3_api.mjs
 ```
+
+`test-state.sh` compiles `DashboardState.java` and `tests/com/wilde/t3tv/DashboardStateTest.java` on a plain JDK and runs checks for status labels, filter counts, environment selection, and the stale/recovery connection states.
+
+Native UI fixtures can run on an explicitly selected Android TV device:
+
+```bash
+python3 scripts/test-native.py DEVICE_SERIAL --output .research/native-qa
+```
+
+This installs a separate **T3 Dashboard UI preview** and instrumentation package. It preserves the installed dashboard and its data, refuses a configured preview, uses synthetic tasks, and never sends a reply or permission decision. It tests visible filters, remote focus/scroll, conversation routing, voice fallback/transcript review without recording, delivery confirmation UI, parser-error privacy, and failed draft saves/reopening. The preview must use the same development signing key on repeat installs; the script does not uninstall an incompatible package. It captures the device's 1080p display and constrains the preview window to 1280×720 at 213dpi for the smaller profile, without changing global TV display settings. Assertions and captures use the same live window geometry; 720p images crop that window from the physical screenshot. Each result must match a fresh invocation and a successful instrumentation exit. Physical microphone and viewing-distance validation remain separate.
 
 ## Configure and install
 
@@ -107,7 +118,7 @@ journalctl --user -u t3-tv-bridge -n 50 --no-pager
 systemctl --user restart t3-tv-bridge
 ```
 
-An offline environment is shown explicitly. The bridge polls every five seconds after each read; network delays can increase the actual interval. The app polls the bridge every five seconds after each response and marks a feed older than 45 seconds stale. No completion is inferred from a disconnected host.
+An offline environment is shown explicitly: its filter dot turns amber and the dashboard names it in a warning banner while the bridge stays live. If the bridge itself is unreachable or its feed is older than 45 seconds, a banner above the task list says the bridge is offline and shows the last successful update age; the footer reads *Showing cached data* and the Live indicator and online counts are removed until polling recovers. A single offline environment is not reported as a lost bridge. The bridge polls every five seconds after each read; network delays can increase the actual interval. The app polls the bridge every five seconds after each response. No completion is inferred from a disconnected host.
 
 Old completed tasks appear in the dashboard on first connection, but do not trigger alerts. The bridge persists event history in `.private/events.sqlite`; the TV persists its event cursor. New run IDs and distinct pending request IDs can trigger fresh alerts even if the displayed status remains the same. Alert bursts are combined into one notification. Retention is the latest 201 events; this dashboard is not an audit log.
 
@@ -125,9 +136,9 @@ Uninstall **T3 Dashboard** on the TV, or use `adb uninstall com.wilde.t3tv`. Sto
 
 ## Replies and credential renewal (v0.2)
 
-**Send / continue** lets T3 start or update the task according to its current state. **Queue follow-up** runs after the active turn. **Update current task** sends an in-flight instruction and is offered when the task is active. Structured questions appear under **Requests** and are answered against their specific request IDs. Permission requests require an explicit decision and confirmation; session-wide and permanent grants stay in the desktop T3 client.
+**Send and continue** lets T3 start or update the task according to its current state. **Queue follow-up** runs after the active turn. **Update current task** sends an in-flight instruction and is offered when the task is active. Structured questions appear under **Requests** and are answered against their specific request IDs. Permission requests require an explicit decision and confirmation; session-wide and permanent grants stay in the desktop T3 client.
 
-Drafts are stored privately on the TV per environment, thread, and request. Before sending, the exact payload and a stable request ID are saved. After a timeout, **Retry delivery** uses that same ID. The bridge persists prepared commands and receipts in `.private/actions.sqlite`; T3’s command IDs prevent duplicate execution if the connection drops after acceptance. A submitted draft is locked until delivery is confirmed or explicitly discarded. Discarding never cancels a message already accepted by T3.
+Drafts are stored privately on the TV per environment, thread, and request; the composer confirms a successful preferences commit before showing *Draft saved on this TV*, including after reopening. Failed saves show a warning until persistence succeeds. Before sending, the exact payload and a stable request ID are saved. After a timeout, **Retry delivery** uses that same ID. The bridge persists prepared commands and receipts in `.private/actions.sqlite`; T3’s command IDs prevent duplicate execution if the connection drops after acceptance. A submitted draft is locked until delivery is confirmed or explicitly discarded. Discarding never cancels a message already accepted by T3.
 
 The scoped T3 credentials expire after 90 days. Renew them without printing tokens:
 

@@ -15,8 +15,9 @@ import java.util.concurrent.*;
 
 public class MonitorService extends Service {
     static volatile JSONObject snapshot;
-    static volatile String error = "Connecting to your environments…";
+    static volatile int feedState = DashboardState.CONNECTING;
     static volatile long lastSuccess;
+    static volatile String feedDetail; // Diagnostic only; the dashboard never parses it for behavior.
     static final String UPDATED = "com.wilde.t3tv.UPDATED";
     private final Handler handler = new Handler(Looper.getMainLooper());
     private ScheduledExecutorService worker;
@@ -59,30 +60,25 @@ public class MonitorService extends Service {
             // Persist before displaying: a service restart cannot replay the same alert.
             prefs.edit().putLong("eventCursor", Math.max(newest, 0)).putString("streamId", stream).commit();
             if (latest != null && prefs.getBoolean("alerts", true)) {
-                String title = count == 1 ? statusLabel(latest.getString("status")) : count + " tasks need attention";
+                String title = count == 1 ? DashboardState.statusLabel(latest.getString("status")) : count + " tasks need attention";
                 String body = latest.getString("environment") + " · " + latest.getString("title");
                 handler.post(() -> alert(title, body));
             }
             snapshot = data;
             lastSuccess = System.currentTimeMillis();
-            error = null;
+            feedState = DashboardState.LIVE;
+            feedDetail = null;
         } catch (Exception e) {
-            android.util.Log.w("T3Dashboard", "Feed refresh failed: " + e.getClass().getSimpleName() + ": " + e.getMessage());
-            error = "Bridge offline · last update " + (lastSuccess == 0 ? "not received" : ((System.currentTimeMillis()-lastSuccess)/1000) + "s ago");
+            feedFailed(e);
         }
         sendBroadcast(new Intent(UPDATED).setPackage(getPackageName()));
     }
 
-    static String statusLabel(String status) {
-        switch(status) {
-            case "waiting": return "Waiting for you";
-            case "completed": return "Ready to review";
-            case "failed": return "Needs a look";
-            case "running": case "starting": case "preparing": return "Working";
-            case "queued": return "Queued";
-            case "idle": return "Idle";
-            default: return status.substring(0,1).toUpperCase() + status.substring(1);
-        }
+    static void feedFailed(Exception e) {
+        // Parser messages can include private connection JSON or response bodies.
+        android.util.Log.w("T3Dashboard", "Feed refresh failed: " + e.getClass().getSimpleName());
+        feedDetail = "Check the bridge connection file and bridge log.";
+        feedState = lastSuccess == 0 ? DashboardState.UNAVAILABLE : DashboardState.STALE;
     }
 
     void alert(String title, String body) {

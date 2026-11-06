@@ -26,7 +26,7 @@ public class ConversationActivity extends Activity {
         bar.addView(TvUi.text(this,environment+"  /  CONVERSATION",13,TvUi.GREEN));root.addView(bar);
         heading=TvUi.text(this,title,24,TvUi.WHITE);heading.setMaxLines(2);heading.setPadding(0,TvUi.dp(this,12),0,TvUi.dp(this,7));root.addView(heading);
         LinearLayout actions=TvUi.row(this);
-        reply=TvUi.button(this,"Reply / Speak",()->compose(null));reply.setEnabled(false);TvUi.addButton(actions,reply,145);
+        reply=TvUi.button(this,"Reply",()->compose(null));reply.setEnabled(false);TvUi.addButton(actions,reply,110);
         questions=TvUi.button(this,"Questions",this::requests);questions.setEnabled(false);TvUi.addButton(actions,questions,160);
         TvUi.addButton(actions,TvUi.button(this,"Refresh",()->load(false)),100);
         older=TvUi.button(this,"Older messages",()->load(true));older.setEnabled(false);TvUi.addButton(actions,older,155);root.addView(actions);
@@ -50,7 +50,7 @@ public class ConversationActivity extends Activity {
     }
     void apply(JSONObject data,boolean history) throws JSONException{
         if(!history){current=data;heading.setText(data.optString("title",title));reply.setEnabled(true);JSONArray requests=data.getJSONArray("requests");questions.setEnabled(requests.length()>0);questions.setText(requests.length()>0?"Requests ("+requests.length()+")":"No requests");}
-        status.setText(history?"Older messages loaded":MonitorService.statusLabel(data.optString("status","idle"))+"  ·  "+data.optString("model")+"  ·  Live");status.setTextColor(TvUi.GREEN);
+        status.setText(history?"Older messages loaded":DashboardState.statusLabel(data.optString("status","idle"))+"  ·  "+data.optString("model")+"  ·  Live");status.setTextColor(TvUi.GREEN);
         if(history||first){cursor=data.isNull("historyCursor")?null:data.optString("historyCursor",null);older.setEnabled(data.optBoolean("hasMoreHistory")&&cursor!=null);}
         JSONArray rows=data.getJSONArray("messages");for(int i=0;i<rows.length();i++){JSONObject m=rows.getJSONObject(i);messages.put(m.getString("id"),m);}
         ArrayList<JSONObject> ordered=new ArrayList<>(messages.values());ordered.sort(Comparator.comparingLong(m->m.optLong("position")));
